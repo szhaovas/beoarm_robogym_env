@@ -19,3 +19,5 @@ to the `__init__.py` file in envs folder's parent folder
   - it's safe to ignore those error messages about "No p gain specified...etc."
 
 ## Demo
+![start](screenshots/start.jpg)
+![end](screenshots/end.jpg)
