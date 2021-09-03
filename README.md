@@ -6,12 +6,12 @@ Note: this demo requires [robo-gym](https://github.com/jr-robotics/robo-gym) and
   - `beoarm` should be put in the same folder where you have `mir100` and `ur` folders
 4. add the line `from robo_gym.envs.beoarm.beoarm_ee_positioning import BeoarmEEPosition` to the `__init__.py` file in your robogym envs folder
 5. add the codes
-```python
-register(
-    id='BeoarmEEPosition-v0',
-    entry_point='robo_gym.envs:BeoarmEEPosition',
-)
-```
+        ```python
+        register(
+            id='BeoarmEEPosition-v0',
+            entry_point='robo_gym.envs:BeoarmEEPosition',
+        )
+        ```
 to the `__init__.py` file in envs folder's parent folder
 6. go to `<your path to robo_gym_server_modules>/robot_server/grpc_msgs` and replace your `python` folder with the `python` folder here
 7. go to `<your path to robo_gym_server_modules>/server_manager/server.py` and find the line containing `assert (len(test_client.get_state ...etc.` (should be in function `add_rl_server` and around line90; sorry I don't know where exactly it would be in the original file since I lost track of the changes I made); change this line to `assert (len(test_client.get_state_msg().state_dict.keys()) >= 1)`
