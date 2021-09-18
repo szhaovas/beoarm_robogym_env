@@ -53,10 +53,10 @@ class RobotServerServicer(robot_server_pb2_grpc.RobotServerServicer):
             return robot_server_pb2.State(success = 0)
 
     def SendGoalGetPlan(self, request, context):
-        # try:
-        #     return self.rosbridge.get_moveit_plan(request)
-        # except:
-        #     rospy.logerr('Failed to send goal and get plan', exc_info=True)
+        try:
+            return self.rosbridge.get_moveit_plan(request)
+        except:
+            rospy.logerr('Failed to send goal and get plan', exc_info=True)
         return robot_server_pb2.MoveitPlan(goal = request, success = 0)
 
     def StrictActionGetState(self, request, context):

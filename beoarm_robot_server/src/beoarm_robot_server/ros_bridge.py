@@ -5,7 +5,7 @@ import copy
 import rospy
 import rospkg
 import tf2_ros
-import moveit_commander
+import pickle
 import numpy as np
 from threading import Event
 from std_msgs.msg import Int32MultiArray, Header, Bool
@@ -52,6 +52,8 @@ state_dict should look like this:
 
 rospack = rospkg.RosPack()
 urdf_path = rospack.get_path('beo_arm_m4') + '/urdf/beo_arm_m4.urdf'
+plan_db_path = rospack.get_path('beo_arm_m4_config') + '/ee_poses_plans.p'
+plan_db = pickle.load(open(plan_db_path, 'rb'))
 robot_model_name = 'robot'
 robot_spawn_trans = {'x':0, 'y':0, 'z':0.04}
 manipulator_group_name = 'arm'
@@ -109,8 +111,6 @@ class RosBridge:
 
         self.get_plan_event = Event()
         self.get_plan_event.set()
-        moveit_commander.roscpp_initialize(sys.argv)
-        self.move_group = moveit_commander.MoveGroupCommander(manipulator_group_name)
 
 
     def get_state(self):
@@ -296,14 +296,14 @@ class RosBridge:
     def set_joint_position(self, goal_joint_position):
         """Set robot joint positions to a desired value
         """
-
+        # FIXME: ros action?
         position_reached = False
         rospy.loginfo('Setting joint positions:')
         rospy.loginfo(goal_joint_position)
         while not position_reached:
             self.publish_env_arm_cmd(goal_joint_position)
             self.get_state_event.clear()
-            joint_position = copy.deepcopy(self.joint_position)
+            joint_position = list(copy.deepcopy(self.joint_position).values())
             position_reached = np.isclose(goal_joint_position, joint_position, atol=0.03).all()
             self.get_state_event.set()
 
@@ -332,7 +332,42 @@ class RosBridge:
     def get_moveit_plan(self, moveit_goal):
         """returns a MoveitPlan to goal
         """
-        pass
+        # makes sure only one process sets plan goal at a time
+        self.get_plan_event.wait()
+        self.get_plan_event.clear()
+
+        goal_list = moveit_goal.pose
+        rospy.loginfo('Received goal {}'.format(goal_list))
+
+        plan_success = False
+        plan1 = None
+        # FIXME: hash?
+        for pose, plan in plan_db:
+            pose_list = [
+                pose.pose.position.x,
+                pose.pose.position.y,
+                pose.pose.position.z
+            ]
+            if np.isclose(goal_list, pose_list, atol=0.0001).all():
+                plan_success = True
+                plan1 = plan
+                break
+
+        if plan_success:
+            traj = []
+            for pt in plan1.joint_trajectory.points:
+                # moveit plan uses ROS indexing
+                point = robot_server_pb2.TrajPoint(positions = pt.positions,
+                                                velocities = pt.velocities,
+                                                accelerations = pt.accelerations,
+                                                effort = pt.effort,
+                                                time_from_start = pt.time_from_start.to_sec())
+                traj.append(point)
+            self.get_plan_event.set()
+            return robot_server_pb2.MoveitPlan(goal = moveit_goal, trajectory = traj, success = True)
+        else:
+            self.get_plan_event.set()
+            return robot_server_pb2.MoveitPlan(goal = moveit_goal, success = False)
 
 
     def _on_joint_states(self, msg):
@@ -402,4 +437,3 @@ class RosBridge:
         d[transform_name + '_rotation_z'] = transform.transform.rotation.z
         d[transform_name + '_rotation_w'] = transform.transform.rotation.w
         return d
-

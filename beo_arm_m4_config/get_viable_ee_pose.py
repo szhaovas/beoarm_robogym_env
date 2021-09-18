@@ -2,166 +2,81 @@
 
 import rospy
 import rospkg
-import tf2_ros
-import numpy as np
-from random import uniform
-from threading import Event
-from std_srvs.srv import Empty
-from gazebo_msgs.srv import DeleteModel, SpawnModel
-from gazebo_msgs.msg import ContactsState
+import sys
+import moveit_commander
+import pickle
+from random import choice
 from geometry_msgs.msg import Pose, Point, Quaternion
-from controller_manager_msgs.srv import SwitchController, LoadController
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from sensor_msgs.msg import JointState
 
-# constants
-iterations = 10
 rospack = rospkg.RosPack()
-urdf_path = rospack.get_path('beo_arm_m4') + '/urdf/beo_arm_m4.urdf'
+beoarm_config_path = rospack.get_path('beo_arm_m4_config')
 
-# global vars
-collision = False
-latest_collision_pair = None
-latest_joint_states = JointState(name=['joint_1','joint_2','joint_2','joint_2'],
-                                 position=[0]*4,
-                                 velocity=[0]*4,
-                                 effort=[0]*4)
+moveit_commander.roscpp_initialize(sys.argv)
+arm = moveit_commander.MoveGroupCommander('arm')
 
-# global objects (only call functions, so no need global keyword)
-rospy.init_node('test_goal')
-traj_pub = rospy.Publisher('/arm_controller/command', JointTrajectory, queue_size=1)
-set_js_event = Event()
-set_js_event.set()
-collision_event = Event()
-collision_event.set()
-tf2_buffer = tf2_ros.Buffer()
-tf2_listener = tf2_ros.TransformListener(tf2_buffer)
+'''
+usage: mvit_rand_valid_ee_pose(500) tries 500 ee poses;
+        if a plan can be successfully generated for a pose, the pose is considered valid;
+        all valid poses are stored in a list of PostStamped objects and pickled to <your path to beo_arm_m4_config>/ee_poses.p;
 
-
-def action_collision_handler(data):
-    global collision, latest_collision_pair
-    if data.states != [] and collision_event.is_set():
-        collision_event.clear()
-        collision = True
-        latest_collision_pair = (data.states[-1].collision1_name, data.states[-1].collision2_name)
-
-
-def joint_state_handler(data):
-    global latest_joint_states
-    if set_js_event.is_set():
-        latest_joint_states = data
-
-
-def my_reset():
-    global latest_joint_states
-
-    print('deleting robot...')
-    rospy.wait_for_service('/gazebo/delete_model')
-    # ServiceProxy gets closed after the first call when persistent=False, so no need to close()
-    delete_proxy = rospy.ServiceProxy('/gazebo/delete_model', DeleteModel, persistent=False)
-    delete_proxy(model_name='robot')
-    # rospy.sleep(1)
-
-    print('respawning robot...')
-    rospy.wait_for_service('/gazebo/spawn_urdf_model')
-    spawn_proxy = rospy.ServiceProxy('/gazebo/spawn_urdf_model', SpawnModel, persistent=False)
-    spawn_proxy(model_name='robot',
-                model_xml=open(urdf_path,'r').read(),
-                initial_pose=Pose(position=Point(0,0,0.04),orientation=Quaternion(0,0,0,0)),
-                reference_frame='world')
-    # rospy.sleep(1)
-
-    print('loading arm_controller...')
-    rospy.wait_for_service('/controller_manager/load_controller')
-    arm_ctrlr_load_proxy = rospy.ServiceProxy('/controller_manager/load_controller', LoadController, persistent=False)
-    arm_ctrlr_load_proxy(name='arm_controller')
-    print('loading joint_state_controller...')
-    rospy.wait_for_service('/controller_manager/load_controller')
-    jts_ctrlr_load_proxy = rospy.ServiceProxy('/controller_manager/load_controller', LoadController, persistent=False)
-    jts_ctrlr_load_proxy(name='joint_state_controller')
-    # rospy.sleep(1)
-
-    print('activating controllers...')
-    rospy.wait_for_service('/controller_manager/switch_controller')
-    controller_on_proxy = rospy.ServiceProxy('/controller_manager/switch_controller', SwitchController, persistent=False)
-    controller_on_proxy(start_controllers=['arm_controller', 'joint_state_controller'],
-                        stop_controllers=[],
-                        strictness=1)
-    rospy.sleep(4)
-
-    latest_joint_states = JointState(name=['joint_1','joint_2','joint_2','joint_2'],
-                                     position=[0]*4,
-                                     velocity=[0]*4,
-                                     effort=[0]*4)
-
-
-def set_joint_positions(ps):
-    global set_js_event
-    position_reached = False
-    while not position_reached:
-        if collision:
-            print('collision...')
-            traj_pub.publish(JointTrajectory())
-            return False
-        g = JointTrajectory()
-        g.joint_names = ['joint_1', 'joint_2', 'joint_3', 'joint_4']
-        g.points = [JointTrajectoryPoint(positions=ps, time_from_start=rospy.Duration.from_sec(2))]
-        traj_pub.publish(g)
-        rospy.sleep(1)
-        set_js_event.clear()
-        position_reached = np.isclose(ps, latest_joint_states.position, atol=0.03).all()
-        set_js_event.set()
-    print('done!')
-    return True
-
-
-try:
-    for i in range(iterations):
-        # needs to restart every iter, otherwise states from the previous iter may leak into this iter
-        subs = [
-            # queue_size=1, latest state
-            rospy.Subscriber('/hand_link_collision', ContactsState, action_collision_handler, queue_size=1),
-            rospy.Subscriber('/link1_collision', ContactsState, action_collision_handler, queue_size=1),
-            rospy.Subscriber('/link2_collision', ContactsState, action_collision_handler, queue_size=1),
-            rospy.Subscriber('/link3_collision', ContactsState, action_collision_handler, queue_size=1),
-            rospy.Subscriber('/link4_collision', ContactsState, action_collision_handler, queue_size=1),
-            rospy.Subscriber('/link5_collision', ContactsState, action_collision_handler, queue_size=1),
-            rospy.Subscriber('/joint_states', JointState, joint_state_handler, queue_size=1)
-        ]
-        rand_pos = [uniform(-3.14, 3.14) for i in range(4)]
-        print('Trying joint positions: {}'.format(rand_pos))
-        result_succeeded = set_joint_positions(rand_pos)
-        try:
-            if result_succeeded:
-                print('Success')
-                print('Collision: {}'.format(collision))
-                print('Latest collision pair: {}'.format(latest_collision_pair))
-                print('Actural joint positions: {}'.format(latest_joint_states.position))
-                ee_to_ref_trans = tf2_buffer.lookup_transform('world', 'hand', rospy.Time(0))
-                ee_to_ref_trans_list = [
-                    ee_to_ref_trans.transform.translation.x,
-                    ee_to_ref_trans.transform.translation.y,
-                    ee_to_ref_trans.transform.translation.z,
-                    ee_to_ref_trans.transform.rotation.x,
-                    ee_to_ref_trans.transform.rotation.y,
-                    ee_to_ref_trans.transform.rotation.z,
-                    ee_to_ref_trans.transform.rotation.w
-                ]
-                print('EE pose: {}'.format(ee_to_ref_trans_list))
+In my experience 1 in 10 poses is valid, so if you want 50 valid poses, try 500 iterations
+'''
+def mvit_rand_valid_ee_pose(iteration=500):
+    ee_poses = []
+    success_count = 0
+    failure_count = 0
+    try:
+        for i in range(iteration):
+            rand_pose = arm.get_random_pose(arm.get_end_effector_link())
+            arm.set_pose_target(rand_pose)
+            plan_success, plan, _, _ = arm.plan()
+            if plan_success:
+                ee_poses.append(rand_pose)
+                success_count += 1
             else:
-                print('Fail')
-                print('Collision: {}'.format(collision))
-                print('Latest collision pair: {}'.format(latest_collision_pair))
-                print('Actural joint positions: {}'.format(latest_joint_states.position))
-        except KeyboardInterrupt:
-            traj_pub.publish(JointTrajectory())
-            raise
-        collision = False
-        latest_collision_pair = None
-        collision_event.set()
-        for s in subs: s.unregister();
-        my_reset()
-except KeyboardInterrupt:
-    rospy.signal_shutdown('KeyboardInterrupt')
-    raise
+                failure_count += 1
+            print('Iteration {} {}'.format(i, 'succeeded' if plan_success else 'failed'))
+        print('Of all {} iterations {} succeeded {} failed'.format(success_count+failure_count, success_count, failure_count))
+        print('Viable poses are: {}'.format(ee_poses))
+        pickle.dump(ee_poses, open(beoarm_config_path+'/rand_valid_poses.p', 'wb'))
+    except KeyboardInterrupt:
+        rospy.signal_shutdown('KeyboardInterrupt')
+        raise
 
+'''
+INPUT: takes in a list of PostStamped objects, so you may pickle.load rand_valid_poses.p and use that as the argument
+OUTPUT: returns a list of tuples (PostStamped, JointTrajectory), i.e. poses and their corresponding plans;
+        some poses, though valid as proven in mvit_rand_valid_ee_pose, cannot be found a plan; these poses are discarded
+'''
+def get_plans(poses):
+    result = []
+    for i, p in enumerate(poses):
+        arm.set_pose_target(p)
+        for j in range(1, 11):
+            plan_success, plan1, _, _ = arm.plan()
+            if plan_success:
+                print('pose %d succeeded!'%i)
+                result.append((p, plan1))
+                break
+            print('pose %d failed, retrying %d/10...'%(i, j))
+    return result
+
+'''
+Example use:
+    run "roslaunch beo_arm_m4_config demo_gazebo.launch gazebo_gui:=false" in another terminal before you run this
+
+    valid poses that are used to reset the box target are in ee_poses.p
+    list of poses-plans that is queried by ros_bridge on plan request are in ee_poses_plans.p
+
+WARNING: This script OVERWRITES, so be sure to rename or backup before you run this
+'''
+if __name__ == '__main__':
+    mvit_rand_valid_ee_pose(100)
+    poses = pickle.load(open(beoarm_config_path+'/rand_valid_poses.p', 'rb'))
+    poses_plans = get_plans(poses)
+    pickle.dump(poses_plans, open(beoarm_config_path+'/ee_poses_plans.p', 'wb'))
+    '''
+    NOTE: eventually we don't use query on PoseStamped objects, but on Point (i.e. trans_x, trans_y, trans_z) objects
+    '''
+    valid_trans = [poses_plans[i][0] for i in range(len(poses_plans))]
+    pickle.dump(valid_trans, open(beoarm_config_path+'/ee_poses.p', 'wb'))

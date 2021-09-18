@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import copy
+import pickle
 import numpy as np
+import rospkg
 import gym
-from random import uniform
+from random import uniform, choice
 from typing import Tuple
 from robo_gym.utils.exceptions import InvalidStateError, RobotServerError, InvalidActionError
 import robo_gym_server_modules.robot_server.client as rs_client
@@ -11,6 +13,9 @@ from robo_gym.envs.simulation_wrapper import Simulation
 
 joint_names = ['joint_1', 'joint_2', 'joint_3', 'joint_4']
 DISTANCE_THRESHOLD = 0.1
+
+rospack = rospkg.RosPack()
+beoarm_config_path = rospack.get_path('beo_arm_m4_config')
 
 class BeoarmEEPosition(gym.Env, Simulation):
     def __init__(self, ip='127.0.0.1', lower_bound_port=None, upper_bound_port=None, gui=False, **kwargs):
@@ -26,7 +31,13 @@ class BeoarmEEPosition(gym.Env, Simulation):
 
         self.elapsed_steps = 0
         self.max_episode_steps = 300
-        self.abs_joint_pos_range = [3.14] * 4
+        self.abs_joint_pos_range = [6.28] * 4
+        viable_goals_p = pickle.load(open(beoarm_config_path+'/ee_poses.p', 'rb'))
+        self.viable_goals = [[
+                                goal.pose.position.x,
+                                goal.pose.position.y,
+                                goal.pose.position.z
+                            ] for goal in viable_goals_p]
 
         # state contains only joint positions scaled to [-1, 1]
         self.state = [0.0] * len(joint_names)
@@ -47,7 +58,7 @@ class BeoarmEEPosition(gym.Env, Simulation):
             if not self._check_valid_ee_trans(target_object_position):
                 raise InvalidStateError('Invalid target_object_position {}'.format(target_object_position))
         else:
-            target_object_position = self._get_random_ee_trans()
+            target_object_position = self._get_random_valid_ee_trans()
 
         reset_msg = robot_server_pb2.State(
             float_params={
@@ -86,7 +97,7 @@ class BeoarmEEPosition(gym.Env, Simulation):
             if not self._check_valid_ee_trans(target_object_position):
                 raise InvalidStateError('Invalid target_object_position {}'.format(target_object_position))
         else:
-            target_object_position = self._get_random_ee_trans()
+            target_object_position = self._get_random_valid_ee_trans()
 
         set_msg = robot_server_pb2.State(
             state_dict = dict(zip(joint_names, target_joint_positions)),
@@ -106,7 +117,7 @@ class BeoarmEEPosition(gym.Env, Simulation):
         self._check_state_dict_keys(new_state_dict)
         normalized_joint_positions = self._normalize_joint_positions([new_state_dict[j+'_position'] for j in joint_names])
         self._check_valid_action(normalized_joint_positions)
-        if not np.isclose(normalized_joint_positions, target_joint_positions, atol=0.05):
+        if not np.isclose(normalized_joint_positions, target_joint_positions, atol=0.05).all():
             raise InvalidStateError('Reset joint positions are not within defined range')
 
         self.state = normalized_joint_positions
@@ -196,17 +207,62 @@ class BeoarmEEPosition(gym.Env, Simulation):
 
 
     '''
-    TODO
+    goal: [position_x, position_y, position_z]
+        default to [object_0_x, object_0_y, object_0_z]
+
+    returns False if plan failed
+        otherwise returns list of position lists
     '''
-    def plan(self, goal):
-        pass
+    def plan(self, goal=None):
+        if goal:
+            if not self._check_valid_ee_trans(goal):
+                raise InvalidStateError('Invalid goal {}'.format(goal))
+        else:
+            goal = [self.state_dict['object_0_to_ref_translation_x'],
+                    self.state_dict['object_0_to_ref_translation_y'],
+                    self.state_dict['object_0_to_ref_translation_z']]
+
+        approx_viable = False
+        goal_list = None
+        for p in self.viable_goals:
+            # moveit default goal tolerances are 0.0001 for position and and 0.001 for orientation
+            if np.isclose(goal, p, atol=0.0001).all():
+                approx_viable = True
+                goal_list = p
+                break
+
+        if approx_viable:
+            plan = self.client.send_goal_get_plan(goal_list)
+        else:
+            raise Exception('Goal {} does not approximate any of the recorded viable positions'.format(goal))
+
+        if plan.success:
+            # allow numerical errors when comparing requested and received goals
+            max_diff = max([abs(a-b) for a, b in zip(plan.goal.pose, goal_list)])
+            if max_diff <= 0.1:
+                commands = []
+                for pt in plan.trajectory:
+                    prop_jp = self._normalize_joint_positions(pt.positions)
+                    commands.append(prop_jp)
+                return commands
+            else:
+                raise Exception('Retrieved plan for another goal ' + str(plan.goal.pose) + ' , whereas requested goal is ' + str(goal_list))
+        else:
+            return False
 
 
     '''
-    TODO
+    plan: list of position lists
+    skip_to_end: if true then directly sets joint positions to the IK solution of goal;
+                    speeds up execution but only use when no collision;
+                    otherwise visits each trajectory point
     '''
     def execute_plan(self, plan, skip_to_end=False):
-        pass
+        if not skip_to_end:
+            for pt in plan[:-1]:
+                self.step(pt, guarantee=True)
+
+        return self.step(plan[-1], guarantee=True)
 
 
     '''
@@ -277,6 +333,10 @@ class BeoarmEEPosition(gym.Env, Simulation):
                 raise InvalidStateError('Robot Server state keys to not match')
 
 
+    def _get_random_valid_ee_trans(self):
+        return choice(self.viable_goals)
+
+
     def _get_random_ee_trans(self):
         counter = 1
         while True:
@@ -297,4 +357,3 @@ class BeoarmEEPosition(gym.Env, Simulation):
     def _check_valid_ee_trans(self, trans):
         distance = np.linalg.norm(trans)
         return 0.1 < distance < 0.4
-
