@@ -23,7 +23,7 @@
                 <box size="1 1 0.001" />
             </geometry>
         </visual>
-        
+
         <collision>
             <origin xyz="0 0 -0.035" rpy="0 0 0"/>
             <geometry>
@@ -36,7 +36,7 @@
         <parent link="dummy_ground" />
         <child link="link_1" />
     </joint>
-  
+
     <link name="link_1">
         <inertial>
             <origin xyz="-0.0385731163984192 -2.28362687350156E-18 -0.00524859501374039" rpy="0 0 0" />
@@ -216,6 +216,38 @@
         <axis xyz="0 0 0" />
     </joint>
 
+    <link name="hand_tip">
+        <!-- FIXME: dummy mass and collision added to not get ignored by gazebo and moveit -->
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <mass value="0.001" />
+            <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1" />
+        </inertial>
+
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0.001 0.001 0.001"/>
+            </geometry>
+            <material name="">
+                <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+            </material>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0.001 0.001 0.001"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <joint name="joint_6" type="fixed">
+        <origin xyz="0.17 0 0.03" rpy="0 0 0" />
+        <parent link="hand" />
+        <child link="hand_tip" />
+        <axis xyz="0 0 0" />
+    </joint>
+
     <!-- This explains sensor and plugin tages:
           https://answers.gazebosim.org//question/20900/what-does-the-sensor-tag-do/ -->
     <gazebo reference="link_1">
@@ -357,4 +389,3 @@
         </plugin>
     </gazebo>
 </robot>
-

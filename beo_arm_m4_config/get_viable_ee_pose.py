@@ -5,8 +5,6 @@ import rospkg
 import sys
 import moveit_commander
 import pickle
-from random import choice
-from geometry_msgs.msg import Pose, Point, Quaternion
 
 rospack = rospkg.RosPack()
 beoarm_config_path = rospack.get_path('beo_arm_m4_config')
