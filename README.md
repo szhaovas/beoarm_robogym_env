@@ -18,5 +18,6 @@ Note: this demo requires [robo-gym](https://github.com/jr-robotics/robo-gym) and
     - it's safe to ignore those error messages about "No p gain specified...etc."
 
 ## Demo
+See the Youtube video [here](https://youtu.be/i43T7e8Q5W8)
 ![start](screenshots/start.jpg)
 ![end](screenshots/end.jpg)
