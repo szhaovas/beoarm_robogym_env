@@ -29,5 +29,9 @@
   <exec_depend>tf</exec_depend>
   <exec_depend>tmux</exec_depend>
   <exec_depend>gazebo_ros_pkgs</exec_depend>
-</package>
 
+  <export>
+    <gazebo_ros gazebo_model_path="${prefix}/models"/>
+    <gazebo_ros gazebo_media_path="${prefix}/worlds"/>
+  </export>
+</package>

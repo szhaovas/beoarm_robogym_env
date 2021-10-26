@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <sdf version="1.5">
-  <model name="box100">
+  <model name="sphere50">
     <link name="link">
       <pose>0 0 0.0 0 0 0</pose>
       <inertial>
@@ -20,9 +20,9 @@
 
       <collision name="collision">
         <geometry>
-          <box>
-            <size>0.1 0.1 0.1</size>
-          </box>
+          <sphere>
+            <radius>0.2</radius>
+          </sphere>
         </geometry>
         <surface>
           <contact>
@@ -33,14 +33,14 @@
 
       <visual name="visual">
         <geometry>
-          <box>
-            <size>0.1 0.1 0.1</size>
-          </box>
+          <sphere>
+            <radius>0.2</radius>
+          </sphere>
         </geometry>
         <material>
           <script>
             <uri>file://media/materials/scripts/gazebo.material</uri>
-            <name>Gazebo/Green</name>
+            <name>Gazebo/Red</name>
           </script>
         </material>
       </visual>
@@ -48,4 +48,3 @@
     </link>
   </model>
 </sdf>
-

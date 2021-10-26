@@ -12,7 +12,7 @@
 
     <include>
       <uri>model://box100</uri>
-      <pose>0.3 0.3 0.1 0 0 0</pose>
+      <pose>0.35 0.35 0.1 0 0 0</pose>
     </include>
 
     <physics type = "ode">

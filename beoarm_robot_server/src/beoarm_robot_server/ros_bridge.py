@@ -5,8 +5,8 @@ import copy
 import rospy
 import rospkg
 import tf2_ros
-import pickle
 import numpy as np
+import moveit_commander
 from threading import Event
 from std_msgs.msg import Int32MultiArray, Header, Bool
 from geometry_msgs.msg import Pose, Point, Quaternion
@@ -52,8 +52,6 @@ state_dict should look like this:
 
 rospack = rospkg.RosPack()
 urdf_path = rospack.get_path('beo_arm_m4') + '/urdf/beo_arm_m4.urdf'
-plan_db_path = rospack.get_path('beo_arm_m4_config') + '/ee_poses_plans.p'
-plan_db = pickle.load(open(plan_db_path, 'rb'))
 robot_model_name = 'robot'
 robot_spawn_trans = {'x':0, 'y':0, 'z':0.04}
 manipulator_group_name = 'arm'
@@ -109,7 +107,10 @@ class RosBridge:
         # Initialization of collision sensor flags
         self.collision_sensors = dict.fromkeys(["hand", "link_1", "link_2", "link_3", "link_4", "link_5"], False)
 
+        # some moveit params
         self.get_plan_event = Event()
+        moveit_commander.roscpp_initialize(sys.argv)
+        self.move_group = moveit_commander.MoveGroupCommander(manipulator_group_name)
         self.get_plan_event.set()
 
 
@@ -280,6 +281,8 @@ class RosBridge:
 
         self.collision_sensors.update(dict.fromkeys(["hand", "link_1", "link_2", "link_3", "link_4", "link_5"], False))
 
+        self.move_group.clear_pose_targets()
+
         self.reset.set()
         self.action_cycle_rate.sleep()
 
@@ -339,19 +342,8 @@ class RosBridge:
         goal_list = moveit_goal.pose
         rospy.loginfo('Received goal {}'.format(goal_list))
 
-        plan_success = False
-        plan1 = None
-        # FIXME: hash?
-        for pose, plan in plan_db:
-            pose_list = [
-                pose.pose.position.x,
-                pose.pose.position.y,
-                pose.pose.position.z
-            ]
-            if np.isclose(goal_list, pose_list, atol=0.0001).all():
-                plan_success = True
-                plan1 = plan
-                break
+        self.move_group.set_position_target(goal_list)
+        plan_success, plan1, _, _ = self.move_group.plan()
 
         if plan_success:
             traj = []

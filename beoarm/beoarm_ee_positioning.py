@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import copy
-import pickle
 import numpy as np
-import rospkg
 import gym
 from random import uniform, choice
 from typing import Tuple
@@ -13,9 +11,6 @@ from robo_gym.envs.simulation_wrapper import Simulation
 
 joint_names = ['joint_1', 'joint_2', 'joint_3', 'joint_4']
 DISTANCE_THRESHOLD = 0.1
-
-rospack = rospkg.RosPack()
-beoarm_config_path = rospack.get_path('beo_arm_m4_config')
 
 class BeoarmEEPosition(gym.Env, Simulation):
     def __init__(self, ip='127.0.0.1', lower_bound_port=None, upper_bound_port=None, gui=False, **kwargs):
@@ -32,12 +27,6 @@ class BeoarmEEPosition(gym.Env, Simulation):
         self.elapsed_steps = 0
         self.max_episode_steps = 300
         self.abs_joint_pos_range = [6.28] * 4
-        viable_goals_p = pickle.load(open(beoarm_config_path+'/ee_poses.p', 'rb'))
-        self.viable_goals = [[
-                                goal.pose.position.x,
-                                goal.pose.position.y,
-                                goal.pose.position.z
-                            ] for goal in viable_goals_p]
 
         # state contains only joint positions scaled to [-1, 1]
         self.state = [0.0] * len(joint_names)
@@ -222,23 +211,10 @@ class BeoarmEEPosition(gym.Env, Simulation):
                     self.state_dict['object_0_to_ref_translation_y'],
                     self.state_dict['object_0_to_ref_translation_z']]
 
-        approx_viable = False
-        goal_list = None
-        for p in self.viable_goals:
-            # moveit default goal tolerances are 0.0001 for position and and 0.001 for orientation
-            if np.isclose(goal, p, atol=0.0001).all():
-                approx_viable = True
-                goal_list = p
-                break
-
-        if approx_viable:
-            plan = self.client.send_goal_get_plan(goal_list)
-        else:
-            raise Exception('Goal {} does not approximate any of the recorded viable positions'.format(goal))
-
+        plan = self.client.send_goal_get_plan(goal)
         if plan.success:
             # allow numerical errors when comparing requested and received goals
-            max_diff = max([abs(a-b) for a, b in zip(plan.goal.pose, goal_list)])
+            max_diff = max([abs(a-b) for a, b in zip(plan.goal.pose, goal)])
             if max_diff <= 0.1:
                 commands = []
                 for pt in plan.trajectory:
@@ -246,7 +222,7 @@ class BeoarmEEPosition(gym.Env, Simulation):
                     commands.append(prop_jp)
                 return commands
             else:
-                raise Exception('Retrieved plan for another goal ' + str(plan.goal.pose) + ' , whereas requested goal is ' + str(goal_list))
+                raise Exception('Retrieved plan for another goal ' + str(plan.goal.pose) + ' , whereas requested goal is ' + str(goal))
         else:
             return False
 
@@ -331,10 +307,6 @@ class BeoarmEEPosition(gym.Env, Simulation):
         for key in keys:
             if key not in state_dict.keys():
                 raise InvalidStateError('Robot Server state keys to not match')
-
-
-    def _get_random_valid_ee_trans(self):
-        return choice(self.viable_goals)
 
 
     def _get_random_ee_trans(self):
