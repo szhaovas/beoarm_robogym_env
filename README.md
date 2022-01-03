@@ -24,3 +24,5 @@ See the Youtube video for moveit-planned pushing [here](https://youtu.be/mxOzYhJ
 See the Youtube video for base+arm simple movement [here](https://youtu.be/XggdD2EGWQY) \
 ![start](screenshots/start.jpg)
 ![end](screenshots/end.jpg)
+![push](screenshots/push.jpg)
+![mobile](screenshots/mobile.jpg)
