@@ -83,7 +83,7 @@ class RosBridge:
 
         # Robot frames
         self.reference_frame = 'dummy_ground'
-        self.ee_frame = 'hand'
+        self.ee_frame = 'hand_tip'
         self.object_frames = rospy.get_param('object_model_names')
 
         # Publish new ModelState here to have object_tf node reset object state in gazebo and update TF
